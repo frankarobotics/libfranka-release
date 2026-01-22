@@ -19,7 +19,6 @@ using franka::Torques;
 using research_interface::robot::AutomaticErrorRecovery;
 using research_interface::robot::Connect;
 using research_interface::robot::GetRobotModel;
-using research_interface::robot::LoadModelLibrary;
 using research_interface::robot::Move;
 using research_interface::robot::SetCartesianImpedance;
 using research_interface::robot::SetCollisionBehavior;
@@ -31,6 +30,8 @@ using research_interface::robot::SetNEToEE;
 using research_interface::robot::StopMove;
 
 const std::string kExpectedModelString = "test_string";
+constexpr research_interface::robot::Move::Deviation kDefaultDeviation1(1, 2, 3);
+constexpr research_interface::robot::Move::Deviation kDefaultDeviation2(4, 5, 6);
 
 template <typename T>
 class Command : public ::testing::Test {
@@ -153,8 +154,8 @@ bool Command<StopMove>::compare(const StopMove::Request&, const StopMove::Reques
 template <>
 Move::Request Command<Move>::getExpected() {
   return Move::Request(Move::ControllerMode::kJointImpedance,
-                       Move::MotionGeneratorMode::kJointVelocity, Move::Deviation(1, 2, 3),
-                       Move::Deviation(4, 5, 6));
+                       Move::MotionGeneratorMode::kJointVelocity, kDefaultDeviation1,
+                       kDefaultDeviation2);
 }
 
 template <>
@@ -263,7 +264,8 @@ TYPED_TEST_CASE(Command, CommandTypes);
 TYPED_TEST(Command, CanSendAndReceiveSuccess) {
   RobotMockServer server;
   Robot::Impl robot(
-      std::make_unique<franka::Network>("127.0.0.1", research_interface::robot::kCommandPort), 0);
+      std::make_unique<franka::Network>("127.0.0.1", research_interface::robot::kCommandPort), 0,
+      franka::RealtimeConfig::kIgnore);
 
   server
       .waitForCommand<typename TestFixture::TCommand>(
@@ -284,7 +286,8 @@ TYPED_TEST(Command, CanSendAndReceiveSuccess) {
 TYPED_TEST(Command, CanSendAndReceiveRejected) {
   RobotMockServer server;
   Robot::Impl robot(
-      std::make_unique<franka::Network>("127.0.0.1", research_interface::robot::kCommandPort), 0);
+      std::make_unique<franka::Network>("127.0.0.1", research_interface::robot::kCommandPort), 0,
+      franka::RealtimeConfig::kIgnore);
 
   server
       .waitForCommand<typename TestFixture::TCommand>(
@@ -307,7 +310,8 @@ TYPED_TEST(Command, CanSendAndReceiveRejected) {
 TYPED_TEST(Command, ThrowsProtocolExceptionIfInvalidResponseReceived) {
   RobotMockServer server;
   Robot::Impl robot(
-      std::make_unique<franka::Network>("127.0.0.1", research_interface::robot::kCommandPort), 0);
+      std::make_unique<franka::Network>("127.0.0.1", research_interface::robot::kCommandPort), 0,
+      franka::RealtimeConfig::kIgnore);
 
   typename TestFixture::TCommand::Status invalid_value = static_cast<decltype(invalid_value)>(-1);
 
@@ -339,7 +343,8 @@ INSTANTIATE_TEST_CASE_P(
 TEST_P(StopMoveCommand, CanReceiveErrorResponses) {
   RobotMockServer server;
   Robot::Impl robot(
-      std::make_unique<franka::Network>("127.0.0.1", research_interface::robot::kCommandPort), 0);
+      std::make_unique<franka::Network>("127.0.0.1", research_interface::robot::kCommandPort), 0,
+      franka::RealtimeConfig::kIgnore);
 
   StopMove::Request request;
   server
@@ -364,7 +369,8 @@ TYPED_TEST_CASE(GetterSetterCommand, GetterSetterCommandTypes);
 TYPED_TEST(GetterSetterCommand, CanSendAndReceiveInvalidArgument) {
   RobotMockServer server;
   Robot::Impl robot(
-      std::make_unique<franka::Network>("127.0.0.1", research_interface::robot::kCommandPort), 0);
+      std::make_unique<franka::Network>("127.0.0.1", research_interface::robot::kCommandPort), 0,
+      franka::RealtimeConfig::kIgnore);
 
   server
       .waitForCommand<typename TestFixture::TCommand>(
@@ -382,11 +388,12 @@ TYPED_TEST(GetterSetterCommand, CanSendAndReceiveInvalidArgument) {
 TEST_F(MoveCommand, CanReceiveMotionStarted) {
   RobotMockServer server;
   Robot::Impl robot(
-      std::make_unique<franka::Network>("127.0.0.1", research_interface::robot::kCommandPort), 0);
+      std::make_unique<franka::Network>("127.0.0.1", research_interface::robot::kCommandPort), 0,
+      franka::RealtimeConfig::kIgnore);
 
   Move::Request request(Move::ControllerMode::kJointImpedance,
-                        Move::MotionGeneratorMode::kJointVelocity, Move::Deviation(1, 2, 3),
-                        Move::Deviation(4, 5, 6));
+                        Move::MotionGeneratorMode::kJointVelocity, kDefaultDeviation1,
+                        kDefaultDeviation2);
 
   server
       .waitForCommand<research_interface::robot::Move>(
@@ -403,11 +410,12 @@ TEST_F(MoveCommand, CanReceiveMotionStarted) {
 TEST_P(MoveCommand, CanReceiveErrorResponses) {
   RobotMockServer server;
   Robot::Impl robot(
-      std::make_unique<franka::Network>("127.0.0.1", research_interface::robot::kCommandPort), 0);
+      std::make_unique<franka::Network>("127.0.0.1", research_interface::robot::kCommandPort), 0,
+      franka::RealtimeConfig::kIgnore);
 
   Move::Request request(Move::ControllerMode::kJointImpedance,
-                        Move::MotionGeneratorMode::kJointVelocity, Move::Deviation(1, 2, 3),
-                        Move::Deviation(4, 5, 6));
+                        Move::MotionGeneratorMode::kJointVelocity, kDefaultDeviation1,
+                        kDefaultDeviation2);
 
   server
       .waitForCommand<::Move>([this](const Move::Request& request) -> Move::Response {
@@ -433,7 +441,8 @@ INSTANTIATE_TEST_CASE_P(
 TEST_P(AutomaticErrorRecoveryCommand, CanReceiveErrorResponses) {
   RobotMockServer server;
   Robot::Impl robot(
-      std::make_unique<franka::Network>("127.0.0.1", research_interface::robot::kCommandPort), 0);
+      std::make_unique<franka::Network>("127.0.0.1", research_interface::robot::kCommandPort), 0,
+      franka::RealtimeConfig::kIgnore);
 
   AutomaticErrorRecovery::Request request;
 

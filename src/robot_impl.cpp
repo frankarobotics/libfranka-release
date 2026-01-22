@@ -4,9 +4,9 @@
 
 #include <sstream>
 
-#include <franka/control_tools.h>
-#include <franka/logging/logger.hpp>
-
+#include "franka/control_tools.h"
+#include "franka/logging/logger.hpp"
+#include "franka/rate_limiting.h"
 #include "load_calculations.h"
 
 namespace franka {
@@ -38,6 +38,8 @@ inline ControlException createControlException(const char* message,
       }
     }
   }
+
+  logging::logError(message_stream.str());
   return ControlException(message_stream.str(), log);
 }
 
@@ -45,18 +47,36 @@ inline ControlException createControlException(const char* message,
 
 Robot::Impl::Impl(std::unique_ptr<Network> network, size_t log_size, RealtimeConfig realtime_config)
     : network_{std::move(network)}, logger_{log_size}, realtime_config_{realtime_config} {
-  if (!network_) {
-    throw std::invalid_argument("libfranka robot: Invalid argument");
+  if (network_ == nullptr) {
+    throw std::invalid_argument("libfranka robot: Invalid network argument");
+  }
+
+  // Configure the thread priority to being set to the highest possible value.
+  bool throw_on_error = realtime_config_ == RealtimeConfig::kEnforce;
+  std::string error_message;
+  logging::logInfo("libfranka: Setting thread priority to the highest possible value.");
+  if (!setCurrentThreadToHighestSchedulerPriority(&error_message) && throw_on_error) {
+    logging::logError(error_message);
+    throw RealtimeException(error_message);
+  }
+
+  if (throw_on_error && !hasRealtimeKernel()) {
+    logging::logError("libfranka: Running kernel does not have realtime capabilities.");
+    throw RealtimeException("libfranka: Running kernel does not have realtime capabilities.");
   }
 
   connect<research_interface::robot::Connect, research_interface::robot::kVersion>(*network_,
                                                                                    &ri_version_);
   updateState(network_->udpBlockingReceive<research_interface::robot::RobotState>());
+
+  auto get_robot_model =
+      this->executeCommand<research_interface::robot::GetRobotModel, GetRobotModelResult>();
+  joint_velocity_limits_config_ = JointVelocityLimitsConfig(get_robot_model.robot_model_urdf);
 }
 
-RobotState Robot::Impl::update(
-    const research_interface::robot::MotionGeneratorCommand* motion_command,
-    const research_interface::robot::ControllerCommand* control_command) {
+RobotState Robot::Impl::updateMotion(
+    const std::optional<research_interface::robot::MotionGeneratorCommand>& motion_command,
+    const std::optional<research_interface::robot::ControllerCommand>& control_command) {
   network_->tcpThrowIfConnectionClosed();
 
   research_interface::robot::RobotCommand robot_command =
@@ -94,12 +114,9 @@ RobotState Robot::Impl::readOnce() {
 void Robot::Impl::writeOnce(const Torques& control_input) {
   research_interface::robot::ControllerCommand control_command =
       createControllerCommand(control_input);
-  research_interface::robot::MotionGeneratorCommand motion_command{};
-  motion_command.dq_c = {0, 0, 0, 0, 0, 0, 0};
-
   network_->tcpThrowIfConnectionClosed();
 
-  sendRobotCommand(&motion_command, &control_command);
+  sendRobotCommand(std::nullopt, control_command);
 }
 
 template <typename MotionGeneratorType>
@@ -108,56 +125,72 @@ void Robot::Impl::writeOnce(const MotionGeneratorType& motion_generator_input,
   auto motion_command = createMotionCommand(motion_generator_input);
   auto control_command = createControllerCommand(control_input);
   network_->tcpThrowIfConnectionClosed();
-  sendRobotCommand(&motion_command, &control_command);
+  sendRobotCommand(motion_command, control_command);
 }
 
 template <typename MotionGeneratorType>
 void Robot::Impl::writeOnce(const MotionGeneratorType& motion_generator_input) {
   auto motion_command = createMotionCommand(motion_generator_input);
   network_->tcpThrowIfConnectionClosed();
-  sendRobotCommand(&motion_command, nullptr);
+  sendRobotCommand(motion_command, std::nullopt);
 }
 
 research_interface::robot::RobotCommand Robot::Impl::sendRobotCommand(
-    const research_interface::robot::MotionGeneratorCommand* motion_command,
-    const research_interface::robot::ControllerCommand* control_command) const {
+    const std::optional<research_interface::robot::MotionGeneratorCommand>& motion_command,
+    const std::optional<research_interface::robot::ControllerCommand>& control_command) const {
   research_interface::robot::RobotCommand robot_command{};
-  if (motion_command != nullptr || control_command != nullptr) {
-    robot_command.message_id = message_id_;
-    if (motion_command != nullptr) {
-      if (current_move_motion_generator_mode_ ==
-          research_interface::robot::MotionGeneratorMode::kIdle) {
-        throw ControlException(
-            "libfranka robot: Trying to send motion command, but no motion generator running!");
-      }
-      robot_command.motion = *motion_command;
-    }
-    if (control_command != nullptr) {
-      if (current_move_controller_mode_ !=
-          research_interface::robot::ControllerMode::kExternalController) {
-        throw ControlException(
-            "libfranka robot: Trying to send control command, but no controller running!");
-      }
-      robot_command.control = *control_command;
-    }
-
-    if (current_move_motion_generator_mode_ !=
-            research_interface::robot::MotionGeneratorMode::kIdle &&
-        current_move_controller_mode_ ==
-            research_interface::robot::ControllerMode::kExternalController &&
-        (motion_command == nullptr || control_command == nullptr)) {
-      throw ControlException("libfranka robot: Trying to send partial robot command!");
-    }
-
-    network_->udpSend<research_interface::robot::RobotCommand>(robot_command);
+  if (!motion_command.has_value() && !control_command.has_value()) {
+    // No new command, return
+    return robot_command;
   }
+
+  {
+    std::lock_guard<std::mutex> lock(message_id_mutex_);
+    robot_command.message_id = message_id_;
+  }
+  if (motion_command.has_value()) {
+    if (current_move_motion_generator_mode_ ==
+            research_interface::robot::MotionGeneratorMode::kIdle ||
+        current_move_motion_generator_mode_ ==
+            research_interface::robot::MotionGeneratorMode::kNone) {
+      throw ControlException(
+          "libfranka robot: Trying to send motion command, but no motion generator running!");
+    }
+    robot_command.motion = *motion_command;
+  }
+
+  if (control_command.has_value()) {
+    if (current_move_controller_mode_ !=
+        research_interface::robot::ControllerMode::kExternalController) {
+      throw ControlException(
+          "libfranka robot: Trying to send control command, but no controller running!");
+    }
+    robot_command.control = *control_command;
+  }
+
+  if ((current_move_motion_generator_mode_ !=
+           research_interface::robot::MotionGeneratorMode::kIdle &&
+       current_move_motion_generator_mode_ !=
+           research_interface::robot::MotionGeneratorMode::kNone) &&
+      current_move_controller_mode_ ==
+          research_interface::robot::ControllerMode::kExternalController &&
+      (!motion_command.has_value() || !control_command.has_value())) {
+    throw ControlException("libfranka robot: Trying to send partial robot command!");
+  }
+
+  network_->udpSend<research_interface::robot::RobotCommand>(robot_command);
 
   return robot_command;
 }
 
 research_interface::robot::RobotState Robot::Impl::receiveRobotState() {
   research_interface::robot::RobotState latest_accepted_state;
-  latest_accepted_state.message_id = message_id_;
+  auto last_message_id = 0U;
+  {
+    std::lock_guard<std::mutex> lock(message_id_mutex_);
+    latest_accepted_state.message_id = message_id_;
+    last_message_id = message_id_;
+  }
 
   // If states are already available on the socket, use the one with the most recent message ID.
   research_interface::robot::RobotState received_state{};
@@ -168,7 +201,7 @@ research_interface::robot::RobotState Robot::Impl::receiveRobotState() {
   }
 
   // If there was no valid state on the socket, we need to wait.
-  while (latest_accepted_state.message_id == message_id_) {
+  while (latest_accepted_state.message_id == last_message_id) {
     received_state = network_->udpBlockingReceive<decltype(received_state)>();
     if (received_state.message_id > latest_accepted_state.message_id) {
       latest_accepted_state = received_state;
@@ -183,7 +216,11 @@ void Robot::Impl::updateState(const research_interface::robot::RobotState& robot
   robot_mode_ = robot_state.robot_mode;
   motion_generator_mode_ = robot_state.motion_generator_mode;
   controller_mode_ = robot_state.controller_mode;
-  message_id_ = robot_state.message_id;
+
+  {
+    std::lock_guard<std::mutex> lock(message_id_mutex_);
+    message_id_ = robot_state.message_id;
+  }
 }
 
 Robot::ServerVersion Robot::Impl::serverVersion() const noexcept {
@@ -191,7 +228,8 @@ Robot::ServerVersion Robot::Impl::serverVersion() const noexcept {
 }
 
 bool Robot::Impl::motionGeneratorRunning() const noexcept {
-  return motion_generator_mode_ != research_interface::robot::MotionGeneratorMode::kIdle;
+  return motion_generator_mode_ != research_interface::robot::MotionGeneratorMode::kIdle &&
+         motion_generator_mode_ != research_interface::robot::MotionGeneratorMode::kNone;
 }
 
 bool Robot::Impl::controllerRunning() const noexcept {
@@ -202,31 +240,47 @@ RealtimeConfig Robot::Impl::realtimeConfig() const noexcept {
   return realtime_config_;
 }
 
+std::array<double, RobotControl::kNumJoints> Robot::Impl::getUpperJointVelocityLimits(
+    const std::array<double, RobotControl::kNumJoints>& joint_positions) const {
+  return joint_velocity_limits_config_.getUpperJointVelocityLimits(joint_positions);
+}
+
+std::array<double, RobotControl::kNumJoints> Robot::Impl::getLowerJointVelocityLimits(
+    const std::array<double, RobotControl::kNumJoints>& joint_positions) const {
+  return joint_velocity_limits_config_.getLowerJointVelocityLimits(joint_positions);
+}
+
 uint32_t Robot::Impl::startMotion(
     research_interface::robot::Move::ControllerMode controller_mode,
     research_interface::robot::Move::MotionGeneratorMode motion_generator_mode,
     const research_interface::robot::Move::Deviation& maximum_path_deviation,
-    const research_interface::robot::Move::Deviation& maximum_goal_pose_deviation) {
+    const research_interface::robot::Move::Deviation& maximum_goal_pose_deviation,
+    bool use_async_motion_generator,
+    const std::optional<std::vector<double>>& maximum_velocities) {
   if (motionGeneratorRunning() || controllerRunning()) {
     throw ControlException("libfranka robot: Attempted to start multiple motions!");
   }
 
+  using MotionGeneratorMode = research_interface::robot::Move::MotionGeneratorMode;
   switch (motion_generator_mode) {
-    case decltype(motion_generator_mode)::kJointPosition:
+    case MotionGeneratorMode::kJointPosition:
       current_move_motion_generator_mode_ =
           decltype(current_move_motion_generator_mode_)::kJointPosition;
       break;
-    case decltype(motion_generator_mode)::kJointVelocity:
+    case MotionGeneratorMode::kJointVelocity:
       current_move_motion_generator_mode_ =
           decltype(current_move_motion_generator_mode_)::kJointVelocity;
       break;
-    case decltype(motion_generator_mode)::kCartesianPosition:
+    case MotionGeneratorMode::kCartesianPosition:
       current_move_motion_generator_mode_ =
           decltype(current_move_motion_generator_mode_)::kCartesianPosition;
       break;
-    case decltype(motion_generator_mode)::kCartesianVelocity:
+    case MotionGeneratorMode::kCartesianVelocity:
       current_move_motion_generator_mode_ =
           decltype(current_move_motion_generator_mode_)::kCartesianVelocity;
+      break;
+    case MotionGeneratorMode::kNone:
+      current_move_motion_generator_mode_ = decltype(current_move_motion_generator_mode_)::kNone;
       break;
     default:
       throw std::invalid_argument("libfranka: Invalid motion generator mode given.");
@@ -247,23 +301,24 @@ uint32_t Robot::Impl::startMotion(
   }
 
   const uint32_t move_command_id = executeCommand<research_interface::robot::Move>(
-      controller_mode, motion_generator_mode, maximum_path_deviation, maximum_goal_pose_deviation);
+      controller_mode, motion_generator_mode, maximum_path_deviation, maximum_goal_pose_deviation,
+      use_async_motion_generator, maximum_velocities);
 
   RobotState robot_state{};
   while (motion_generator_mode_ != current_move_motion_generator_mode_ ||
          controller_mode_ != current_move_controller_mode_) {
     try {
       if (network_->tcpReceiveResponse<research_interface::robot::Move>(
-              move_command_id,
-              std::bind(&Robot::Impl::handleCommandResponse<research_interface::robot::Move>, this,
-                        std::placeholders::_1))) {
+              move_command_id, [this](const auto& response) {
+                return this->handleCommandResponse<research_interface::robot::Move>(response);
+              })) {
         break;
       }
     } catch (const CommandException& e) {
       throw ControlException(e.what());
     }
 
-    robot_state = update(nullptr, nullptr);
+    robot_state = updateMotion(std::nullopt, std::nullopt);
   }
 
   logger_.flush();
@@ -273,26 +328,31 @@ uint32_t Robot::Impl::startMotion(
 
 void Robot::Impl::finishMotion(
     uint32_t motion_id,
-    const research_interface::robot::MotionGeneratorCommand* motion_command,
-    const research_interface::robot::ControllerCommand* control_command) {
+    const std::optional<research_interface::robot::MotionGeneratorCommand>& motion_command,
+    const std::optional<research_interface::robot::ControllerCommand>& control_command) {
   if (!motionGeneratorRunning() && !controllerRunning()) {
     current_move_motion_generator_mode_ = research_interface::robot::MotionGeneratorMode::kIdle;
     current_move_controller_mode_ = research_interface::robot::ControllerMode::kOther;
     return;
   }
 
-  if (motion_command == nullptr) {
-    throw ControlException("libfranka robot: No motion generator command given!");
+  auto motion_finished_command = motion_command;
+  auto controller_finished_command = control_command;
+  if (motion_command.has_value()) {
+    motion_finished_command->motion_generation_finished = true;
+  } else if (control_command.has_value()) {
+    controller_finished_command->torque_command_finished = true;
+  } else {
+    logging::logError("libfranka robot: No motion generator or control command given!");
+    throw ControlException("libfranka robot: No motion generator or control command given!");
   }
-  research_interface::robot::MotionGeneratorCommand motion_finished_command = *motion_command;
-  motion_finished_command.motion_generation_finished = true;
 
   // The TCP response for the finished Move might arrive while the robot state still shows that the
   // motion is running, or afterwards. To handle both situations, we do not process TCP packages in
   // this loop and explicitly wait for the Move response over TCP afterwards.
   RobotState robot_state{};
   while (motionGeneratorRunning() || controllerRunning()) {
-    robot_state = update(&motion_finished_command, control_command);
+    robot_state = updateMotion(motion_finished_command, controller_finished_command);
   }
 
   auto response = network_->tcpBlockingReceiveResponse<research_interface::robot::Move>(motion_id);
@@ -311,14 +371,20 @@ void Robot::Impl::finishMotion(
 }
 
 void Robot::Impl::finishMotion(uint32_t motion_id, const Torques& control_input) {
-  research_interface::robot::MotionGeneratorCommand motion_command{};
-  motion_command.dq_c = {0, 0, 0, 0, 0, 0, 0};
-
   research_interface::robot::ControllerCommand controller_command =
       createControllerCommand(control_input);
 
-  finishMotion(motion_id, &motion_command, &controller_command);
+  if (motionGeneratorRunning()) {
+    logging::logError(
+        "libfranka robot: Motion generator is still running! Can't stop external "
+        "control");
+    throw std::invalid_argument(
+        "libfranka robot: Motion generator is still running! Can't stop external control");
+  }
+
+  finishMotion(motion_id, std::nullopt, controller_command);
 }
+
 research_interface::robot::MotionGeneratorCommand Robot::Impl::createMotionCommand(
     const JointPositions& motion_input) {
   checkFinite(motion_input.q);
@@ -400,7 +466,7 @@ void Robot::Impl::cancelMotion(uint32_t motion_id) {
   }
 
   research_interface::robot::RobotState robot_state;
-  do {
+  do {  // NOLINT(cppcoreguidelines-avoid-do-while)
     robot_state = receiveRobotState();
   } while (motionGeneratorRunning() || controllerRunning());
 
@@ -411,13 +477,13 @@ void Robot::Impl::cancelMotion(uint32_t motion_id) {
   current_move_controller_mode_ = research_interface::robot::ControllerMode::kOther;
 }
 
-Model Robot::Impl::loadModel(const std::string& urdf_model) const {
-  return Model(*network_, urdf_model);
+Model Robot::Impl::loadModel(const std::string& urdf_model) {
+  return Model(urdf_model);
 }
 
 // for the tests
-Model Robot::Impl::loadModel(std::unique_ptr<RobotModelBase> robot_model) const {
-  return Model(*network_, std::move(robot_model));
+Model Robot::Impl::loadModel(std::unique_ptr<RobotModelBase> robot_model) {
+  return Model(std::move(robot_model));
 }
 
 RobotState convertRobotState(const research_interface::robot::RobotState& robot_state) noexcept {
@@ -467,6 +533,8 @@ RobotState convertRobotState(const research_interface::robot::RobotState& robot_
   converted.O_ddP_EE_c = robot_state.O_ddP_EE_c;
   converted.theta = robot_state.theta;
   converted.dtheta = robot_state.dtheta;
+  converted.accelerometer_top = robot_state.accelerometer_top;
+  converted.accelerometer_bottom = robot_state.accelerometer_bottom;
   converted.current_errors = robot_state.errors;
   converted.last_motion_errors = robot_state.reflex_reason;
   converted.control_command_success_rate = robot_state.control_command_success_rate;

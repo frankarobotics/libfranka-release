@@ -1,10 +1,6 @@
 set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
 
 ## Google Test
-set(GTEST_SOURCE_DIR ${THIRDPARTY_SOURCES_DIR}/googletest)
-set(GTEST_BINARY_DIR ${CMAKE_BINARY_DIR}/googletest)
-set(GTEST_VERSION 1.8.0)
-set(GTEST_ARCHIVE_HASH 58a6f4277ca2bc8565222b3bbd58a177609e9c488e8a72649359ba51450db7d8)
 set(GTEST_LIBRARIES gtest gmock gmock_main)
 
 include(SetupGoogleTest)
@@ -16,25 +12,16 @@ endforeach()
 set(TEST_OUTPUT_DIR ${PROJECT_BINARY_DIR}/test_results)
 set(TEST_DEPENDENCIES
   ${GTEST_LIBRARIES}
+  TinyXML2::TinyXML2
   Poco::Foundation
   Poco::Net
   Eigen3::Eigen3
   Threads::Threads
+  pinocchio::pinocchio
   franka
   libfranka-common
-  pinocchio::pinocchio
 )
 set(TEST_INCLUDE_DIRECTORIES ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/../src)
-
-## Test libraries
-add_library(fcimodels SHARED
-  libfcimodels_stub.cpp
-)
-
-target_include_directories(fcimodels PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_include_directories(fcimodels PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
-
-list(APPEND TEST_DEPENDENCIES fcimodels)
 
 ## Test runner
 add_executable(run_all_tests
@@ -55,13 +42,17 @@ add_executable(run_all_tests
   robot_command_tests.cpp
   robot_impl_tests.cpp
   robot_model_tests.cpp
+  robot_model_fk_tests.cpp
+  robot_jacobian_tests.cpp
   robot_state_tests.cpp
   robot_tests.cpp
   vacuum_gripper_tests.cpp
   vacuum_gripper_command_tests.cpp
-
   logging/logging_tests.cpp
   logging/robot_state_logger_tests.cpp
+  joint_velocity_limits_tests.cpp
+
+  async_control/async_position_control_tests.cpp
 )
 
 set(TEST_COMPILE_DEFINITIONS FRANKA_TEST_BINARY_DIR="${CMAKE_CURRENT_BINARY_DIR}")
@@ -109,7 +100,11 @@ get_target_property(TESTS run_all_tests SOURCES)
 set(ASan_FLAGS -g -O1 -fsanitize=address)
 set(UBSan_FLAGS -g -O1 -fsanitize=undefined -fno-sanitize=alignment -fno-sanitize-recover=undefined)
 set(TSan_FLAGS -g -O1 -fsanitize=thread)
-set(SANITIZERS ASan UBSan TSan)
+set(SANITIZERS 
+  ASan 
+  UBSan 
+  # TSan # ThreadSanitizer tests currently not supported due g++ ASLR issues on latest Linux kernel (6.5+). This is fixed with clang, consider enabling if we switch to clang
+)
 
 foreach(sanitizer ${SANITIZERS})
   set(sanitizer_flags "${${sanitizer}_FLAGS}")
@@ -136,6 +131,7 @@ endforeach()
 ## Valgrind
 find_program(VALGRIND_PROG valgrind)
 if(VALGRIND_PROG)
+  message(STATUS "Found Valgrind: ${VALGRIND_PROG}")
   add_test(NAME Valgrind
     COMMAND ${VALGRIND_PROG} --error-exitcode=1 --track-origins=yes --
             ./run_all_tests --gtest_output=xml:${TEST_OUTPUT_DIR}/valgrind.xml

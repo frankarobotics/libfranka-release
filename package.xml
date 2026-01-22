@@ -4,14 +4,14 @@
    schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>libfranka</name>
-  <version>0.15.0</version>
+  <version>0.20.3</version>
   <description>libfranka is a C++ library for Franka Robotics research robots</description>
   <maintainer email="support@franka.de">Franka Robotics GmbH</maintainer>
   <license>Apache 2.0</license>
 
   <url type="website">http://wiki.ros.org/libfranka</url>
-  <url type="repository">https://github.com/frankaemika/libfranka</url>
-  <url type="bugtracker">https://github.com/frankaemika/libfranka/issues</url>
+  <url type="repository">https://github.com/frankarobotics/libfranka</url>
+  <url type="bugtracker">https://github.com/frankarobotics/libfranka/issues</url>
   <author>Franka Robotics GmbH</author>
 
   <buildtool_depend>cmake</buildtool_depend>
@@ -20,10 +20,12 @@
   <build_depend>fmt</build_depend>
   <build_depend>libpoco-dev</build_depend>
   <build_depend>pinocchio</build_depend>
+  <build_depend>tinyxml2</build_depend>
 
   <exec_depend>fmt</exec_depend>
   <exec_depend>libpoco-dev</exec_depend>
   <exec_depend>pinocchio</exec_depend>
+  <exec_depend>tinyxml2</exec_depend>
 
   <doc_depend>doxygen</doc_depend>
   <doc_depend>graphviz</doc_depend>

@@ -4,6 +4,7 @@
 
 #include <array>
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -14,6 +15,52 @@
 #include <research_interface/robot/rbk_types.h>
 #include <research_interface/robot/service_types.h>
 #include <franka/logging/robot_state_log.hpp>
+
+/**
+ * @brief Computes the reference lower limits for joint velocity calculation for testing only.
+ */
+constexpr std::array<double, 7> referenceLowerLimitsJointVelocityCalculation(
+    const std::array<double, 7>& q) {
+  return std::array<double, 7>{
+      std::max(-2.62, std::min(0.0, 0.30 - std::sqrt(std::max(0.0, 12.0 * (2.750100 + q[0]))))) +
+          0.001,
+      std::max(-2.62, std::min(0.0, 0.20 - std::sqrt(std::max(0.0, 5.17 * (1.791800 + q[1]))))) +
+          0.001,
+      std::max(-2.62, std::min(0.0, 0.20 - std::sqrt(std::max(0.0, 7.00 * (2.906500 + q[2]))))) +
+          0.001,
+      std::max(-2.62, std::min(0.0, 0.30 - std::sqrt(std::max(0.0, 8.00 * (3.048100 + q[3]))))) +
+          0.001,
+      std::max(-5.26, std::min(0.0, 0.35 - std::sqrt(std::max(0.0, 34.0 * (2.810100 + q[4]))))) +
+          0.001,
+      std::max(-4.18, std::min(0.0, 0.35 - std::sqrt(std::max(0.0, 11.0 * (-0.54092 + q[5]))))) +
+          0.001,
+      std::max(-5.26, std::min(0.0, 0.35 - std::sqrt(std::max(0.0, 34.0 * (3.019600 + q[6]))))) +
+          0.001,
+  };
+}
+
+/**
+ * @brief Computes the reference upper limits for joint velocity calculation for testing only.
+ */
+constexpr std::array<double, 7> referenceUpperLimitsJointVelocityCalculation(
+    const std::array<double, 7>& q) {
+  return std::array<double, 7>{
+      std::min(2.62, std::max(0.0, -0.30 + std::sqrt(std::max(0.0, 12.0 * (2.75010 - q[0]))))) -
+          0.001,
+      std::min(2.62, std::max(0.0, -0.20 + std::sqrt(std::max(0.0, 5.17 * (1.79180 - q[1]))))) -
+          0.001,
+      std::min(2.62, std::max(0.0, -0.20 + std::sqrt(std::max(0.0, 7.00 * (2.90650 - q[2]))))) -
+          0.001,
+      std::min(2.62, std::max(0.0, -0.30 + std::sqrt(std::max(0.0, 8.00 * (-0.1458 - q[3]))))) -
+          0.001,
+      std::min(5.26, std::max(0.0, -0.35 + std::sqrt(std::max(0.0, 34.0 * (2.81010 - q[4]))))) -
+          0.001,
+      std::min(4.18, std::max(0.0, -0.35 + std::sqrt(std::max(0.0, 11.0 * (4.52050 - q[5]))))) -
+          0.001,
+      std::min(5.26, std::max(0.0, -0.35 + std::sqrt(std::max(0.0, 34.0 * (3.01960 - q[6]))))) -
+          0.001,
+  };
+}
 
 bool stringContains(const std::string& actual, const std::string& expected);
 
@@ -45,7 +92,9 @@ void testRobotStatesAreEqual(const research_interface::robot::RobotState& expect
                              const franka::RobotState& actual);
 void testRobotStatesAreEqual(const franka::RobotState& expected, const franka::RobotState& actual);
 
-void randomRobotCommand(research_interface::robot::RobotCommand& command);
+std::tuple<std::optional<research_interface::robot::MotionGeneratorCommand>,
+           std::optional<research_interface::robot::ControllerCommand>>
+randomRobotCommand();
 void testMotionGeneratorCommandsAreEqual(
     const research_interface::robot::MotionGeneratorCommand& expected,
     const research_interface::robot::MotionGeneratorCommand& actual);
@@ -65,7 +114,6 @@ namespace research_interface {
 namespace robot {
 
 bool operator==(const Move::Deviation& left, const Move::Deviation& right);
-
 }  // namespace robot
 }  // namespace research_interface
 

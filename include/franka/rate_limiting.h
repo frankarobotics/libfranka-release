@@ -37,6 +37,7 @@ constexpr double kTolNumberPacketsLost = 0.0;
  * Factor for the definition of rotational limits using the Cartesian Pose interface
  */
 constexpr double kFactorCartesianRotationPoseInterface = 0.99;
+
 /**
  * Maximum torque rate
  */
@@ -101,6 +102,7 @@ constexpr double kMaxElbowJerk = 5000 - kLimitEps;
  * Maximum elbow acceleration
  */
 constexpr double kMaxElbowAcceleration = 10.0000 - kLimitEps;
+
 /**
  * Maximum elbow velocity
  */
@@ -108,16 +110,29 @@ constexpr double kMaxElbowVelocity =
     1.5000 - kLimitEps - kTolNumberPacketsLost * kDeltaT * kMaxElbowAcceleration;
 
 /**
+ * Minimum elbow velocity
+ */
+constexpr double kMinElbowVelocity = -kMaxElbowVelocity;
+
+/**
  * Computes the maximum joint velocity based on joint position
  *
  * @note The implementation is based on
- * https://frankaemika.github.io/docs/control_parameters.html#limits-for-franka-research-3.
+ * https://frankarobotics.github.io/docs/control_parameters.html#limits-for-franka-research-3.
  *
  * @param[in] q joint position.
  *
  * @return Upper limits of joint velocity at the given joint position.
+ *
+ * @deprecated This function is deprecated and will be removed in future versions.
+ * Use `Robot::getUpperJointVelocityLimits(const std::array<double, 7UL> &joint_positions)` instead
+ * (if applicable).
  */
-inline std::array<double, 7> computeUpperLimitsJointVelocity(const std::array<double, 7>& q) {
+[[deprecated(
+    "Use Robot::getUpperJointVelocityLimits(const std::array<double, 7UL> &joint_positions) "
+    "instead with system images >= 5.9.0.")]] inline std::array<double, 7>
+computeUpperLimitsJointVelocity(
+    const std::array<double, 7>& q) {  // NOLINT(readability-identifier-length)
   return std::array<double, 7>{
       std::min(2.62, std::max(0.0, -0.30 + std::sqrt(std::max(0.0, 12.0 * (2.75010 - q[0]))))) -
           kJointVelocityLimitsTolerance[0],
@@ -140,13 +155,21 @@ inline std::array<double, 7> computeUpperLimitsJointVelocity(const std::array<do
  * Computes the minimum joint velocity based on joint position
  *
  * @note The implementation is based on
- * https://frankaemika.github.io/docs/control_parameters.html#limits-for-franka-research-3.
+ * https://frankarobotics.github.io/docs/control_parameters.html#limits-for-franka-research-3.
  *
  * @param[in] q joint position.
  *
  * @return Lower limits of joint velocity at the given joint position.
+ *
+ * @deprecated This function is deprecated and will be removed in future versions.
+ * Use `Robot::getlowerJointVelocityLimits(const std::array<double, 7UL> &joint_positions)` instead
+ * (if applicable).
  */
-inline std::array<double, 7> computeLowerLimitsJointVelocity(const std::array<double, 7>& q) {
+[[deprecated(
+    "Use Robot::getlowerJointVelocityLimits(const std::array<double, 7UL> &joint_positions) "
+    "instead with system images >= 5.9.0.")]] inline std::array<double, 7>
+computeLowerLimitsJointVelocity(
+    const std::array<double, 7>& q) {  // NOLINT(readability-identifier-length)
   return std::array<double, 7>{
       std::max(-2.62, std::min(0.0, 0.30 - std::sqrt(std::max(0.0, 12.0 * (2.750100 + q[0]))))) +
           kJointVelocityLimitsTolerance[0],

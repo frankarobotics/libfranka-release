@@ -11,8 +11,6 @@
 
 #include <fstream>
 #include <sstream>
-#include "model_library.h"
-#include "network.h"
 
 using namespace std::string_literals;  // NOLINT(google-build-using-namespace)
 
@@ -24,18 +22,14 @@ Frame operator++(Frame& frame, int /* dummy */) noexcept {
   return original;
 }
 
-Model::Model(Network& network, const std::string& urdf_model)
-    : library_{new ModelLibrary(network)} {
+Model::Model(const std::string& urdf_model) {
   robot_model_ = std::make_unique<RobotModel>(urdf_model);
 }
 
 // for the tests
-Model::Model(Network& network, std::unique_ptr<RobotModelBase> robot_model)
-    : library_{new ModelLibrary(network)} {
-  robot_model_ = std::move(robot_model);
-}
+Model::Model(std::unique_ptr<RobotModelBase> robot_model) : robot_model_(std::move(robot_model)) {}
 
-// Has to be declared here, as the ModelLibrary type is incomplete in the header
+// Has to be declared here for proper destruction of robot_model_
 Model::~Model() noexcept = default;
 Model::Model(Model&&) noexcept = default;
 Model& Model::operator=(Model&&) noexcept = default;
@@ -46,45 +40,32 @@ std::array<double, 16> Model::pose(Frame frame, const franka::RobotState& robot_
 
 std::array<double, 16> Model::pose(
     Frame frame,
-    const std::array<double, 7>& q,
+    const std::array<double, 7>& q,        // NOLINT(readability-identifier-length)
     const std::array<double, 16>& F_T_EE,  // NOLINT(readability-identifier-naming)
     const std::array<double, 16>& EE_T_K)  // NOLINT(readability-identifier-naming)
     const {
   std::array<double, 16> output;
   switch (frame) {
     case Frame::kJoint1:
-      library_->joint1(q.data(), output.data());
-      break;
+      return robot_model_->pose(q, 1);
     case Frame::kJoint2:
-      library_->joint2(q.data(), output.data());
-      break;
+      return robot_model_->pose(q, 2);
     case Frame::kJoint3:
-      library_->joint3(q.data(), output.data());
-      break;
+      return robot_model_->pose(q, 3);
     case Frame::kJoint4:
-      library_->joint4(q.data(), output.data());
-      break;
+      return robot_model_->pose(q, 4);
     case Frame::kJoint5:
-      library_->joint5(q.data(), output.data());
-      break;
+      return robot_model_->pose(q, 5);
     case Frame::kJoint6:
-      library_->joint6(q.data(), output.data());
-      break;
+      return robot_model_->pose(q, 6);
     case Frame::kJoint7:
-      library_->joint7(q.data(), output.data());
-      break;
+      return robot_model_->pose(q, 7);
     case Frame::kFlange:
-      library_->flange(q.data(), output.data());
-      break;
+      return robot_model_->poseFlange(q);
     case Frame::kEndEffector:
-      library_->ee(q.data(), F_T_EE.data(), output.data());
-      break;
+      return robot_model_->poseEe(q, F_T_EE);
     case Frame::kStiffness:
-      library_->ee(
-          q.data(),
-          Eigen::Matrix4d(Eigen::Matrix4d(F_T_EE.data()) * Eigen::Matrix4d(EE_T_K.data())).data(),
-          output.data());
-      break;
+      return robot_model_->poseStiffness(q, F_T_EE, EE_T_K);
     default:
       throw std::invalid_argument("Invalid frame given.");
   }
@@ -99,50 +80,34 @@ std::array<double, 42> Model::bodyJacobian(Frame frame,
 
 std::array<double, 42> Model::bodyJacobian(
     Frame frame,
-    const std::array<double, 7>& q,
+    const std::array<double, 7>& q,        // NOLINT(readability-identifier-length)
     const std::array<double, 16>& F_T_EE,  // NOLINT(readability-identifier-naming)
     const std::array<double, 16>& EE_T_K)  // NOLINT(readability-identifier-naming)
     const {
-  std::array<double, 42> output;
   switch (frame) {
     case Frame::kJoint1:
-      library_->body_jacobian_joint1(output.data());
-      break;
+      return robot_model_->bodyJacobian(q, 1);
     case Frame::kJoint2:
-      library_->body_jacobian_joint2(q.data(), output.data());
-      break;
+      return robot_model_->bodyJacobian(q, 2);
     case Frame::kJoint3:
-      library_->body_jacobian_joint3(q.data(), output.data());
-      break;
+      return robot_model_->bodyJacobian(q, 3);
     case Frame::kJoint4:
-      library_->body_jacobian_joint4(q.data(), output.data());
-      break;
+      return robot_model_->bodyJacobian(q, 4);
     case Frame::kJoint5:
-      library_->body_jacobian_joint5(q.data(), output.data());
-      break;
+      return robot_model_->bodyJacobian(q, 5);
     case Frame::kJoint6:
-      library_->body_jacobian_joint6(q.data(), output.data());
-      break;
+      return robot_model_->bodyJacobian(q, 6);
     case Frame::kJoint7:
-      library_->body_jacobian_joint7(q.data(), output.data());
-      break;
+      return robot_model_->bodyJacobian(q, 7);
     case Frame::kFlange:
-      library_->body_jacobian_flange(q.data(), output.data());
-      break;
+      return robot_model_->bodyJacobianFlange(q);
     case Frame::kEndEffector:
-      library_->body_jacobian_ee(q.data(), F_T_EE.data(), output.data());
-      break;
+      return robot_model_->bodyJacobianEe(q, F_T_EE);
     case Frame::kStiffness:
-      library_->body_jacobian_ee(
-          q.data(),
-          Eigen::Matrix4d(Eigen::Matrix4d(F_T_EE.data()) * Eigen::Matrix4d(EE_T_K.data())).data(),
-          output.data());
-      break;
+      return robot_model_->bodyJacobianStiffness(q, F_T_EE, EE_T_K);
     default:
       throw std::invalid_argument("Invalid frame given.");
   }
-
-  return output;
 }
 
 std::array<double, 42> Model::zeroJacobian(Frame frame,
@@ -152,50 +117,34 @@ std::array<double, 42> Model::zeroJacobian(Frame frame,
 
 std::array<double, 42> Model::zeroJacobian(
     Frame frame,
-    const std::array<double, 7>& q,
+    const std::array<double, 7>& q,        // NOLINT(readability-identifier-length)
     const std::array<double, 16>& F_T_EE,  // NOLINT(readability-identifier-naming)
     const std::array<double, 16>& EE_T_K)  // NOLINT(readability-identifier-naming)
     const {
-  std::array<double, 42> output;
   switch (frame) {
     case Frame::kJoint1:
-      library_->zero_jacobian_joint1(output.data());
-      break;
+      return robot_model_->zeroJacobian(q, 1);
     case Frame::kJoint2:
-      library_->zero_jacobian_joint2(q.data(), output.data());
-      break;
+      return robot_model_->zeroJacobian(q, 2);
     case Frame::kJoint3:
-      library_->zero_jacobian_joint3(q.data(), output.data());
-      break;
+      return robot_model_->zeroJacobian(q, 3);
     case Frame::kJoint4:
-      library_->zero_jacobian_joint4(q.data(), output.data());
-      break;
+      return robot_model_->zeroJacobian(q, 4);
     case Frame::kJoint5:
-      library_->zero_jacobian_joint5(q.data(), output.data());
-      break;
+      return robot_model_->zeroJacobian(q, 5);
     case Frame::kJoint6:
-      library_->zero_jacobian_joint6(q.data(), output.data());
-      break;
+      return robot_model_->zeroJacobian(q, 6);
     case Frame::kJoint7:
-      library_->zero_jacobian_joint7(q.data(), output.data());
-      break;
+      return robot_model_->zeroJacobian(q, 7);
     case Frame::kFlange:
-      library_->zero_jacobian_flange(q.data(), output.data());
-      break;
+      return robot_model_->zeroJacobianFlange(q);
     case Frame::kEndEffector:
-      library_->zero_jacobian_ee(q.data(), F_T_EE.data(), output.data());
-      break;
+      return robot_model_->zeroJacobianEe(q, F_T_EE);
     case Frame::kStiffness:
-      library_->zero_jacobian_ee(
-          q.data(),
-          Eigen::Matrix4d(Eigen::Matrix4d(F_T_EE.data()) * Eigen::Matrix4d(EE_T_K.data())).data(),
-          output.data());
-      break;
+      return robot_model_->zeroJacobianStiffness(q, F_T_EE, EE_T_K);
     default:
       throw std::invalid_argument("Invalid frame given.");
   }
-
-  return output;
 }
 
 std::array<double, 49> franka::Model::mass(const franka::RobotState& robot_state) const noexcept {
@@ -203,7 +152,7 @@ std::array<double, 49> franka::Model::mass(const franka::RobotState& robot_state
 }
 
 std::array<double, 49> franka::Model::mass(
-    const std::array<double, 7>& q,
+    const std::array<double, 7>& q,        // NOLINT(readability-identifier-length)
     const std::array<double, 9>& I_total,  // NOLINT(readability-identifier-naming)
     double m_total,
     const std::array<double, 3>& F_x_Ctotal)  // NOLINT(readability-identifier-naming)
@@ -214,15 +163,20 @@ std::array<double, 49> franka::Model::mass(
   return output;
 }
 
-std::array<double, 7> franka::Model::coriolis(const franka::RobotState& robot_state) const
-    noexcept {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+
+std::array<double, 7> franka::Model::coriolis(
+    const franka::RobotState& robot_state) const noexcept {
   return coriolis(robot_state.q, robot_state.dq, robot_state.I_total, robot_state.m_total,
                   robot_state.F_x_Ctotal);
 }
 
+#pragma GCC diagnostic pop
+
 std::array<double, 7> franka::Model::coriolis(
-    const std::array<double, 7>& q,
-    const std::array<double, 7>& dq,
+    const std::array<double, 7>& q,        // NOLINT(readability-identifier-length)
+    const std::array<double, 7>& dq,       // NOLINT(readability-identifier-length)
     const std::array<double, 9>& I_total,  // NOLINT(readability-identifier-naming)
     double m_total,
     const std::array<double, 3>& F_x_Ctotal)  // NOLINT(readability-identifier-naming)
@@ -233,9 +187,22 @@ std::array<double, 7> franka::Model::coriolis(
   return output;
 }
 
-std::array<double, 7> franka::Model::gravity(const franka::RobotState& robot_state,
-                                             const std::array<double, 3>& gravity_earth) const
-    noexcept {
+std::array<double, 7> franka::Model::coriolis(
+    const std::array<double, 7>& q,        // NOLINT(readability-identifier-length)
+    const std::array<double, 7>& dq,       // NOLINT(readability-identifier-length)
+    const std::array<double, 9>& I_total,  // NOLINT(readability-identifier-naming)
+    double m_total,
+    const std::array<double, 3>& F_x_Ctotal,  // NOLINT(readability-identifier-naming)
+    const std::array<double, 3>& gravity_earth) const noexcept {
+  std::array<double, 7> output;
+  robot_model_->coriolis(q, dq, I_total, m_total, F_x_Ctotal, gravity_earth, output);
+
+  return output;
+}
+
+std::array<double, 7> franka::Model::gravity(
+    const franka::RobotState& robot_state,
+    const std::array<double, 3>& gravity_earth) const noexcept {
   return gravity(robot_state.q, robot_state.m_total, robot_state.F_x_Ctotal, gravity_earth);
 };
 
@@ -244,7 +211,7 @@ std::array<double, 7> franka::Model::gravity(const franka::RobotState& robot_sta
 };
 
 std::array<double, 7> franka::Model::gravity(
-    const std::array<double, 7>& q,
+    const std::array<double, 7>& q,  // NOLINT(readability-identifier-length)
     double m_total,
     const std::array<double, 3>& F_x_Ctotal,  // NOLINT(readability-identifier-naming)
     const std::array<double, 3>& gravity_earth) const noexcept {

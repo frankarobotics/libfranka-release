@@ -18,7 +18,7 @@ namespace franka {
 /**
  * Describes the robot's current mode.
  */
-enum class RobotMode {
+enum class RobotMode {  // NOLINT(performance-enum-size)
   kOther,
   kIdle,
   kMove,
@@ -367,6 +367,20 @@ struct RobotState {
    * Motor velocity. Unit: \f$[\frac{rad}{s}]\f$
    */
   std::array<double, 7> dtheta{};
+
+  /**
+   * \f$\ddot{x}\f$
+   * Translational acceleration data from the accelerometers located on the top of the PCB
+   * of Joint 1 through Joint 6 (no accelerometers in the last joint). Unit: \f$[\frac{m}{s^2}]\f$
+   */
+  std::array<std::array<float, 3>, 6> accelerometer_top{};
+
+  /**
+   * \f$\ddot{x}\f$
+   * Translational acceleration data from the accelerometers located on the bottom of the PCB
+   * of Joint 1 through Joint 6 (no accelerometers in the last joint). Unit: \f$[\frac{m}{s^2}]\f$
+   */
+  std::array<std::array<float, 3>, 6> accelerometer_bottom{};
 
   /**
    * Current error state.

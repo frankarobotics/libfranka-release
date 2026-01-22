@@ -104,6 +104,8 @@ class MockServer {
  private:
   void serverThread();
   void sendInitialState(Socket& udp_socket);
+  void initializeServer();
+  void addDefaultRobotModelHandler();  // Specialized for RobotTypes
 
   template <typename T>
   MockServer& onSendUDP(std::function<T()> on_send_udp);
@@ -254,7 +256,7 @@ void MockServer<C>::handleCommand(
     Socket& tcp_socket,
     std::function<typename T::Response(const typename T::Request&)> callback,
     uint32_t* command_id) {
-  typename T::Header header;
+  typename T::Header header{};
   typename T::Request request = receiveRequest<T>(tcp_socket, &header);
   if (command_id != nullptr) {
     *command_id = header.command_id;

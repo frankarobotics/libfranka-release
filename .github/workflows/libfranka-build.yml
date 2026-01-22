@@ -1,0 +1,142 @@
+name: Build libfranka Debian Packages
+
+on:
+  push:
+    tags:
+      - '*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Tag name for release (leave empty for artifacts only)'
+        required: false
+        type: string
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}/pylibfranka-build
+
+jobs:
+  build-deb:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - ubuntu_version: "20.04"
+            python_version: "3.8"
+          - ubuntu_version: "22.04"
+            python_version: "3.10"
+          - ubuntu_version: "24.04"
+            python_version: "3.12"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+          fetch-depth: 0
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull pre-built Docker image
+        run: |
+          echo "Pulling pre-built image for Ubuntu ${{ matrix.ubuntu_version }}..."
+          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:ubuntu${{ matrix.ubuntu_version }}
+          docker tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:ubuntu${{ matrix.ubuntu_version }} libfranka-build:${{ matrix.ubuntu_version }}
+
+      - name: Build and package in container
+        uses: addnab/docker-run-action@v3
+        with:
+          image: libfranka-build:${{ matrix.ubuntu_version }}
+          options: -v ${{ github.workspace }}:/workspaces
+          run: |
+            cd /workspaces
+            cmake -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTS=OFF -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -B build -S .
+            cmake --build build -- -j$(nproc)
+            cd build
+            cpack -G DEB
+
+      - name: Generate SHA256 checksums
+        run: |
+          cd build
+          for deb in *.deb; do
+            if [ -f "$deb" ]; then
+              sha256sum "$deb" > "${deb}.sha256"
+              echo "Generated checksum for $deb:"
+              cat "${deb}.sha256"
+            fi
+          done
+
+      - name: List generated files
+        run: |
+          echo "Generated packages and checksums:"
+          ls -lh build/*.deb build/*.sha256
+
+      - name: Upload Debian package and checksum
+        uses: actions/upload-artifact@v4
+        with:
+          name: libfranka-${{ matrix.ubuntu_version }}
+          path: |
+            build/*.deb
+            build/*.sha256
+          retention-days: 30
+
+  release:
+    name: Create GitHub Release
+    needs: [build-deb]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag != '')
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Get release info
+        id: get_release_info
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            TAG="${{ github.event.inputs.release_tag }}"
+          else
+            TAG=${GITHUB_REF#refs/tags/}
+          fi
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "Release tag: $TAG"
+        shell: bash
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: packages/
+          pattern: libfranka-*
+          merge-multiple: true
+
+      - name: Generate checksums summary
+        run: |
+          echo "Packages to upload:"
+          ls -la packages/
+          echo ""
+          echo "Checksums:"
+          cat packages/*.sha256
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.get_release_info.outputs.tag }}
+          name: libfranka ${{ steps.get_release_info.outputs.tag }}
+          draft: false
+          prerelease: false
+          files: packages/*
+          generate_release_notes: true
+          fail_on_unmatched_files: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -19,7 +19,7 @@ namespace franka {
 /**
  * Enumerates the seven joints, the flange, and the end effector of a robot.
  */
-enum class Frame {
+enum class Frame {  // NOLINT(performance-enum-size)
   kJoint1,
   kJoint2,
   kJoint3,
@@ -43,9 +43,6 @@ enum class Frame {
  */
 Frame operator++(Frame& frame, int /* dummy */) noexcept;
 
-class ModelLibrary;
-class Network;
-
 /**
  * Calculates poses of joints and dynamic properties of the robot.
  */
@@ -58,22 +55,21 @@ class Model {
    *
    * @see Robot::loadModel
    *
-   * @param[in] network For internal use.
+   * @param[in] urdf_model The URDF model string from the robot.
    *
-   * @throw ModelException if the model library cannot be loaded.
+   * @throw ModelException if the model cannot be initialized.
    */
-  explicit Model(franka::Network& network, const std::string& urdf_model);
+  explicit Model(const std::string& urdf_model);
 
   /**
    * Creates a new Model instance only for the tests.
    *
    * This constructor is for the unittests for enabling mocks.
    *
-   * @param[in] network For internal use.
    * @param[in] robot_model unique pointer to the mocked robot_model
    *
    */
-  explicit Model(franka::Network& network, std::unique_ptr<RobotModelBase> robot_model);
+  explicit Model(std::unique_ptr<RobotModelBase> robot_model);
 
   /**
    * Move-constructs a new Model instance.
@@ -122,7 +118,7 @@ class Model {
    */
   std::array<double, 16> pose(
       Frame frame,
-      const std::array<double, 7>& q,
+      const std::array<double, 7>& q,        // NOLINT(readability-identifier-length)
       const std::array<double, 16>& F_T_EE,  // NOLINT(readability-identifier-naming)
       const std::array<double, 16>& EE_T_K)  // NOLINT(readability-identifier-naming)
       const;
@@ -153,7 +149,7 @@ class Model {
    */
   std::array<double, 42> bodyJacobian(
       Frame frame,
-      const std::array<double, 7>& q,
+      const std::array<double, 7>& q,        // NOLINT(readability-identifier-length)
       const std::array<double, 16>& F_T_EE,  // NOLINT(readability-identifier-naming)
       const std::array<double, 16>& EE_T_K)  // NOLINT(readability-identifier-naming)
       const;
@@ -184,7 +180,7 @@ class Model {
    */
   std::array<double, 42> zeroJacobian(
       Frame frame,
-      const std::array<double, 7>& q,
+      const std::array<double, 7>& q,        // NOLINT(readability-identifier-length)
       const std::array<double, 16>& F_T_EE,  // NOLINT(readability-identifier-naming)
       const std::array<double, 16>& EE_T_K)  // NOLINT(readability-identifier-naming)
       const;
@@ -212,7 +208,7 @@ class Model {
    * @return Vectorized 7x7 mass matrix, column-major.
    */
   std::array<double, 49> mass(
-      const std::array<double, 7>& q,
+      const std::array<double, 7>& q,        // NOLINT(readability-identifier-length)
       const std::array<double, 9>& I_total,  // NOLINT(readability-identifier-naming)
       double m_total,
       const std::array<double, 3>& F_x_Ctotal)  // NOLINT(readability-identifier-naming)
@@ -232,6 +228,9 @@ class Model {
    * Calculates the Coriolis force vector (state-space equation): \f$ c= C \times
    * dq\f$, in \f$[Nm]\f$.
    *
+   * @deprecated This overload is deprecated. Use coriolis(q, dq, i_total, m_total, f_x_ctotal,
+   * g_earth) for better performance.
+   *
    * @param[in] q Joint position.
    * @param[in] dq Joint velocity.
    * @param[in] I_total Inertia of the attached total load including end effector, relative to
@@ -243,13 +242,39 @@ class Model {
    *
    * @return Coriolis force vector.
    */
+  [[deprecated(
+      "Use coriolis(q, dq, i_total, m_total, f_x_ctotal, g_earth) instead")]] std::array<double, 7>
+  coriolis(const std::array<double, 7>& q,        // NOLINT(readability-identifier-length)
+           const std::array<double, 7>& dq,       // NOLINT(readability-identifier-length)
+           const std::array<double, 9>& I_total,  // NOLINT(readability-identifier-naming)
+           double m_total,
+           const std::array<double, 3>& F_x_Ctotal)  // NOLINT(readability-identifier-naming)
+      const noexcept;
+
+  /**
+   * Calculates the Coriolis force vector with gravity (faster implementation).
+   * Unit: \f$[Nm]\f$.
+   *
+   * @param[in] q Joint position.
+   * @param[in] dq Joint velocity.
+   * @param[in] I_total Inertia of the attached total load including end effector, relative to
+   * center of mass, given as vectorized 3x3 column-major matrix. Unit: \f$[kg \times m^2]\f$.
+   * @param[in] m_total Weight of the attached total load including end effector.
+   * Unit: \f$[kg]\f$.
+   * @param[in] F_x_Ctotal Translation from flange to center of mass of the attached total
+   load.
+   * Unit: \f$[m]\f$.
+   * @param[in] gravity_earth Earth's gravity vector. Unit: \f$\frac{m}{s^2}\f$.
+   *
+   * @return Coriolis force vector.
+   */
   std::array<double, 7> coriolis(
-      const std::array<double, 7>& q,
-      const std::array<double, 7>& dq,
+      const std::array<double, 7>& q,        // NOLINT(readability-identifier-length)
+      const std::array<double, 7>& dq,       // NOLINT(readability-identifier-length)
       const std::array<double, 9>& I_total,  // NOLINT(readability-identifier-naming)
       double m_total,
-      const std::array<double, 3>& F_x_Ctotal)  // NOLINT(readability-identifier-naming)
-      const noexcept;
+      const std::array<double, 3>& F_x_Ctotal,  // NOLINT(readability-identifier-naming)
+      const std::array<double, 3>& gravity_earth) const noexcept;
 
   /**
    * Calculates the gravity vector. Unit: \f$[Nm]\f$.
@@ -265,7 +290,7 @@ class Model {
    * @return Gravity vector.
    */
   std::array<double, 7> gravity(
-      const std::array<double, 7>& q,
+      const std::array<double, 7>& q,  // NOLINT(readability-identifier-length)
       double m_total,
       const std::array<double, 3>& F_x_Ctotal,  // NOLINT(readability-identifier-naming)
       const std::array<double, 3>& gravity_earth = {{0., 0., -9.81}}) const noexcept;
@@ -296,7 +321,6 @@ class Model {
   /// @endcond
 
  private:
-  std::unique_ptr<ModelLibrary> library_;
   std::unique_ptr<RobotModelBase> robot_model_;
 };
 

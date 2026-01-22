@@ -64,7 +64,7 @@ int main(int argc, char** argv) {
       std::tie(robot_state, period) = rw_interface->readOnce();
 
       time += period.toMSec();
-      if (time == 0.0) {
+      if (time == 0) {
         rw_interface->writeOnce(zero_torques);
         continue;
       }
@@ -97,7 +97,7 @@ int main(int argc, char** argv) {
     return -1;
   }
 
-  avg_success_rate = avg_success_rate / counter;
+  avg_success_rate = avg_success_rate / static_cast<double>(counter);
 
   std::cout << std::endl
             << std::endl
@@ -123,7 +123,7 @@ int main(int argc, char** argv) {
   } else if (avg_success_rate < 0.95) {
     std::cout << std::endl << "WARNING: MANY PACKETS GOT LOST!" << std::endl;
     std::cout << "PLEASE INSPECT YOUR SETUP AND FOLLOW ADVICE ON" << std::endl
-              << "https://frankaemika.github.io/docs/troubleshooting.html" << std::endl;
+              << "https://frankarobotics.github.io/docs/troubleshooting.html" << std::endl;
   }
   std::cout << "#######################################################" << std::endl << std::endl;
 

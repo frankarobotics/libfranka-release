@@ -26,10 +26,11 @@ class ActiveTorqueControlTest : public ::testing::Test {
             std::move(std::make_unique<Network>("127.0.0.1", robot::kCommandPort)),
             0,
             RealtimeConfig::kIgnore)),
-        robot(RobotMock(robot_impl_mock)){};
+        robot(RobotMock(robot_impl_mock)) {};
 
   std::unique_ptr<ActiveControlBase> startTorqueControl() {
-    EXPECT_CALL(*robot_impl_mock, startMotion(testing::_, testing::_, testing::_, testing::_))
+    EXPECT_CALL(*robot_impl_mock,
+                startMotion(testing::_, testing::_, testing::_, testing::_, testing::_, testing::_))
         .Times(1)
         .WillOnce(::testing::Return(100));
 

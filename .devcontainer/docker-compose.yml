@@ -1,12 +1,13 @@
 services:
   libfranka_project:
     build:
-      context: .
+      context: ../.ci/
       dockerfile: Dockerfile
       args:
-        USER_UID: ${USER_UID}
-        USER_GID: ${USER_GID}
-    container_name: libfranka
+        USER_UID: ${USER_UID:-1000}
+        USER_GID: ${USER_GID:-1000}
+        UBUNTU_VERSION: ${UBUNTU_VERSION:-22.04}
+    container_name: libfranka-${UBUNTU_VERSION:-22.04}
     network_mode: "host"
     shm_size: 512m
     privileged: true
@@ -21,4 +22,3 @@ services:
       rtprio: 99
       rttime: -1
       memlock: 8428281856
-      

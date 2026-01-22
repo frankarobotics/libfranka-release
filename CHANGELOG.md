@@ -1,5 +1,125 @@
 # CHANGELOG
 
+All notable changes to libfranka in this file.
+
+## [0.20.2]
+### libfranka - C++
+- Fix the github workflow to push all the debian packages from 20.4, 22.04 and 24.04
+### pylibfranka - Python
+#### Added
+- Automated publishing to PyPI via GitHub Actions workflow. When a version tag is pushed, the workflow automatically builds wheels for Python 3.9, 3.10, 3.11, and 3.12, and publishes them to PyPI. Users can now install pylibfranka directly from PyPI using `pip install pylibfranka`.
+- Fix the pylibfranka pybind error with std::nullopt
+
+## [0.20.1]
+
+### libfranka - C++
+
+- Fixed tinyxml2 dependency for ros users using `rosdep install`
+
+## [0.20.0]
+### libfranka - C++
+#### Changed
+- Hotfix to avoid torques discontinuity false positives due to robot state float precision change (was again reverted).
+- Breaking change: Fixed a wrong torque discontinuity trigger by reverting the float change within the robot state back to doubles.
+
+### pylibfranka - Python
+#### Added
+- Async control python bindings
+- Async joint positions control example from C++.
+
+## [0.19.0]
+### libfranka - C++
+#### Changed
+- To support franka_ros2, we added an option for the async position control to base the `getFeedback` function on a robot state received via `franka_hardware` instead of querying the robot directly.
+- Format libfranka debian package to inlclude ubuntu code name and arch: libfranka_VERSION_CODENAME_ARCH.deb
+- Added build containers to support Ubuntu 22.04 and 24.04
+
+
+## [0.18.2]
+Requires Franka Research 3 System Version >= 5.9.0
+
+### libfranka - C++
+#### Documentation
+- Enhanced documentation with expanded installation methods, and reorganized getting started guide
+
+#### Added
+- upload debian packages automatically to releases
+
+#### Fixed
+- Fixed a compile issue with TinyXML2 dependency (see [github](https://github.com/frankarobotics/libfranka/issues/215))
+
+### pylibfranka - Python
+#### Added
+- Added Joint and Cartesian Velocity controller examples.
+
+## [0.18.1]
+Requires Franka Research 3 System Version >= 5.9.0
+
+### libfranka - C++
+#### Changed
+- The libfranka library is built with static links - removing the need for dynamic dependencies at runtime
+- Fix the acceleration link addition bug and robot model link parsing [github](https://github.com/frankarobotics/libfranka/issues/213)
+- Update the test urdf with the acceleration links and joint
+
+### pylibfranka - Python
+#### Added
+- Added API documentation section to the official docs: [API References](https://frankarobotics.github.io/docs/libfranka/docs/api_references.html)
+
+## [0.18.0]
+Requires Franka Research 3 System Version >= 5.9.0
+
+### libfranka - C++
+#### Added
+- Forward kinematics computation using Pinocchio library
+- Jacobian computation using Pinocchio library
+- Accelerometer data exposed in robot state
+- Joint position-based velocity limits parsed from URDF to compute upper and lower velocity bounds
+- Documentation under libfranka repository
+- Feat: Async Position Control Handler added to libfranka to support asynchronous position control (**Experimental and subject to change**)
+
+#### Changed
+- Updated libfranka-common (common-libfranka) to use float-based RobotState struct
+- Upgraded Pinocchio dependency to version 3.4.0
+- Upgraded minimum Clang version from 6 to 14
+- Removed dynamic library loading from Model constructor
+
+#### Fixed
+- Corrected elbow limit rating which was using incorrect values
+
+#### Deprecated
+- Marked `franka::computeUpperLimitsJointVelocity(const std::array<double, 7UL> &q)` and `franka::computeLowerLimitsJointVelocity(const std::array<double, 7UL> &q)`as deprecated. It will be removed in future versions. Use `Robot::getUpperJointVelocityLimits(const std::array<double, 7UL> &joint_positions)` and `Robot::getLowerJointVelocityLimits(const std::array<double, 7UL> &joint_positions)` instead.
+- With system image >= 5.9.0, the joint position limits of the system with libfranka are increased to match the datasheet. The methods `franka::computeUpperLimitsJointVelocity(const std::array<double, 7UL> &q)` and `franka::computeLowerLimitsJointVelocity(const std::array<double, 7UL> &q)` now impose stricter constraints compared to the new parametrized limits.
+
+### pylibfranka - Python
+- Deployment of the pylibfranka to the github hosted web-page
+- Pylibfranka and libfranka versions are synchronized
+
+
+## [0.17.0] - 2025-10-15
+### pylibfranka - Python
+#### Added
+- Cartesian pose control interface
+
+## 0.16.1 - 2025-10-10
+
+* Fix: fix cmake and package versioning
+
+## 0.16.0 - 2025-09-15
+
+* Feat: Added pylibfranka - a python binding for libfranka
+
+## 0.15.3 - 2025-07-31
+
+* Fix outdated Emika links
+
+## 0.15.2 - 2025-07-24
+
+* Optimize robot model computation
+
+## 0.15.1 - 2025-06-23
+
+* docs starts a new docs build
+
 ## 0.15.0 - 2025-01-16
 
 Requires Franka Research 3 System Version >= 5.7.2

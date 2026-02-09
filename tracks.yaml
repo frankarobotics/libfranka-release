@@ -46,7 +46,7 @@ tracks:
     patches: null
     release_inc: '1'
     release_repo_url: null
-    release_tag: :{version}
+    release_tag: 0.20.4
     ros_distro: humble
     vcs_type: git
     vcs_uri: https://github.com/frankaemika/libfranka.git

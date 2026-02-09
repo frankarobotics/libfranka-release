@@ -1,13 +1,13 @@
 set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
 
 ## Google Test
-set(GTEST_LIBRARIES gtest gmock gmock_main)
+set(GTEST_LIBRARIES 
+  GTest::gtest 
+  GTest::gmock 
+  GTest::gmock_main
+)
 
 include(SetupGoogleTest)
-
-foreach(lib ${GTEST_LIBRARIES})
-  target_compile_options(${lib} PUBLIC -Wno-deprecated-copy)
-endforeach()
 
 set(TEST_OUTPUT_DIR ${PROJECT_BINARY_DIR}/test_results)
 set(TEST_DEPENDENCIES
@@ -133,7 +133,11 @@ find_program(VALGRIND_PROG valgrind)
 if(VALGRIND_PROG)
   message(STATUS "Found Valgrind: ${VALGRIND_PROG}")
   add_test(NAME Valgrind
-    COMMAND ${VALGRIND_PROG} --error-exitcode=1 --track-origins=yes --
-            ./run_all_tests --gtest_output=xml:${TEST_OUTPUT_DIR}/valgrind.xml
+    COMMAND ${VALGRIND_PROG} 
+      --error-exitcode=1 
+      --track-origins=yes
+      --show-error-list=yes
+      ./run_all_tests 
+      --gtest_output=xml:${TEST_OUTPUT_DIR}/valgrind.xml
   )
 endif()

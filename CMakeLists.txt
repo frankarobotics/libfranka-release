@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.11)
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
-set(libfranka_VERSION 0.20.3)
+set(libfranka_VERSION 0.20.4)
 
 project(libfranka
   VERSION ${libfranka_VERSION}
@@ -221,8 +221,16 @@ if(BUILD_EXAMPLES)
 endif()
 
 ## Packaging
-include(SetVersionFromGit)
-set_version_from_git(PACKAGE_VERSION PACKAGE_TAG)
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git")
+  message(STATUS ".git directory found, setting version from latest git tag")
+  include(SetVersionFromGit)
+  set_version_from_git(PACKAGE_VERSION PACKAGE_TAG)
+else()
+  message(STATUS "No .git directory found, using version from CMakeLists.txt")
+  set(PACKAGE_VERSION ${PROJECT_VERSION})
+  set(PACKAGE_TAG ${PROJECT_VERSION})
+endif()
+message(STATUS "${PROJECT_NAME} version: ${PACKAGE_VERSION}, Package tag: ${PACKAGE_TAG}")
 
 # Get architecture
 execute_process(COMMAND dpkg --print-architecture OUTPUT_VARIABLE PACKAGE_ARCH OUTPUT_STRIP_TRAILING_WHITESPACE)

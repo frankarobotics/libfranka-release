@@ -1,3 +1,4 @@
+/* groovylint-disable NestedBlockDepth */
 def PYTHON_VERSION_BY_UBUNTU = ['20.04': '3.9', '22.04': '3.10', '24.04': '3.12']
 
 pipeline {
@@ -35,15 +36,15 @@ pipeline {
         }
         agent {
           dockerfile {
-            dir ".ci"
-            filename "Dockerfile"
-            reuseNode false
+            dir '.ci'
+            filename 'Dockerfile'
+            reuseNode true
             additionalBuildArgs "--pull --build-arg UBUNTU_VERSION=${env.UBUNTU_VERSION} --build-arg PYTHON_VERSION=${PYTHON_VERSION_BY_UBUNTU[env.UBUNTU_VERSION]} --tag libfranka:${env.UBUNTU_VERSION}"
             args '--privileged ' +
                  '--cap-add=SYS_PTRACE ' +
                  '--security-opt seccomp=unconfined ' +
                  '--shm-size=2g '
-         }
+          }
         }
         stages {
           stage('Init Distro') {
@@ -70,7 +71,7 @@ pipeline {
               stage('Clean Workspace') {
                 steps {
                   script {
-                    def distro = DISTRO_VERSIONS[env.UBUNTU_VERSION]
+                    def distro = env.DISTRO
                     withEnv(["DISTRO=${distro}"]) {
                       sh '''
                         # Clean build dirs for this distro axis
@@ -114,28 +115,6 @@ pipeline {
                       make -j$(nproc)
                       cmake --install . --prefix ../install-release.${DISTRO}
                     '''
-                  }
-                }
-              }
-              stage('Build examples (debug)') {
-                steps {
-                  script {
-                    def distro = DISTRO_VERSIONS[env.UBUNTU_VERSION]
-                    dir("build-debug-examples.${distro}") {
-                      sh "cmake -DCMAKE_PREFIX_PATH=../install-debug.${distro} ../examples"
-                      sh 'make -j$(nproc)'
-                    }
-                  }
-                }
-              }
-              stage('Build examples (release)') {
-                steps {
-                  script {
-                    def distro = DISTRO_VERSIONS[env.UBUNTU_VERSION]
-                    dir("build-release-examples.${distro}") {
-                      sh "cmake -DCMAKE_PREFIX_PATH=../install-release.${distro} ../examples"
-                      sh 'make -j$(nproc)'
-                    }
                   }
                 }
               }
@@ -209,7 +188,7 @@ pipeline {
           stage('Test') {
             steps {
               catchError(buildResult: env.UNSTABLE, stageResult: env.UNSTABLE) {
-                                timeout(time: 300, unit: 'SECONDS') {
+                timeout(time: 300, unit: 'SECONDS') {
                   sh '''
                     # ASLR Fix: Disable ASLR temporarily for ASan compatibility
                     echo "[Debug Tests] Disabling ASLR for ASan compatibility..."
@@ -218,15 +197,14 @@ pipeline {
                   '''
 
                   script {
-                    def distro = DISTRO_VERSIONS[env.UBUNTU_VERSION]
-                    dir("build-debug.${distro}") {
+                    dir("build-debug.${env.DISTRO}") {
                       sh '''
                         echo "[Debug Tests] Running tests..."
                         ctest -V
                       '''
                     }
 
-                    dir("build-release.${distro}") {
+                    dir("build-release.${env.DISTRO}") {
                       sh '''
                         echo "[Release Tests] Running tests..."
                         ctest -V
@@ -246,8 +224,8 @@ pipeline {
             post {
               always {
                 catchError(buildResult: env.UNSTABLE, stageResult: env.UNSTABLE) {
-                  junit "build-release.${DISTRO_VERSIONS[env.UBUNTU_VERSION]}/test_results/*.xml"
-                  junit "build-debug.${DISTRO_VERSIONS[env.UBUNTU_VERSION]}/test_results/*.xml"
+                  junit "build-release.${env.DISTRO}/test_results/*.xml"
+                  junit "build-debug.${env.DISTRO}/test_results/*.xml"
                 }
               }
             }
@@ -257,10 +235,10 @@ pipeline {
               sh '.ci/checkgithistory.sh https://github.com/frankarobotics/libfranka.git develop'
             }
           }
-          stage('Publish') {
+          stage('Publish deb packages') {
             steps {
               script {
-                def distro = DISTRO_VERSIONS[env.UBUNTU_VERSION]
+                def distro = env.DISTRO
                 dir("build-release.${distro}") {
                   catchError(buildResult: env.UNSTABLE, stageResult: env.UNSTABLE) {
                     sh 'cpack'
@@ -282,12 +260,19 @@ pipeline {
                   }
                 }
               }
-
-              // Build and publish pylibfranka documentation
+            }
+          }
+          stage('Publish pylibfranka documentation') {
+            when {
+              expression {
+                env.UBUNTU_VERSION == '20.04'
+              }
+            }
+            steps {
+              // Build and publish pylibfranka documentation (only on Ubuntu 20.04)
               catchError(buildResult: env.UNSTABLE, stageResult: env.UNSTABLE) {
                 script {
-                  def distro = DISTRO_VERSIONS[env.UBUNTU_VERSION]
-                  withEnv(["DISTRO=${distro}"]) {
+                  withEnv(["DISTRO=${env.DISTRO}"]) {
                     sh '''
                       # Install pylibfranka from root (builds against libfranka in build-release.${DISTRO})
                       export LD_LIBRARY_PATH="${WORKSPACE}/build-release.${DISTRO}:${LD_LIBRARY_PATH:-}"
@@ -316,12 +301,7 @@ pipeline {
                         # Add libfranka to library path
                         export LD_LIBRARY_PATH="${WORKSPACE}/build-release.${DISTRO}:${LD_LIBRARY_PATH:-}"
 
-                        # Build the documentation only on Ubuntu 20.04
-                        if [ "${UBUNTU_VERSION}" = "20.04" ]; then
-                          make html
-                        else
-                          echo "Skipping docs build on ${UBUNTU_VERSION}"
-                        fi
+                        make html
                       '''
 
                       publishHTML([allowMissing: false,
@@ -329,7 +309,7 @@ pipeline {
                                   keepAll: true,
                                   reportDir: '_build/html',
                                   reportFiles: 'index.html',
-                                  reportName: "pylibfranka Documentation (${distro})"])
+                                  reportName: "pylibfranka Documentation (${env.DISTRO})"])
                     }
                   }
                 }
